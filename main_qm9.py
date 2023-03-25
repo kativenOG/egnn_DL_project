@@ -47,8 +47,8 @@ parser.add_argument('--weight_decay', type=float, default=1e-16, metavar='N',
                     help='weight decay')
 
 args = parser.parse_args()
-args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
+args.cuda = "cuda" if  not args.no_cuda and torch.cuda.is_available() else "cpu"
+device = torch.device(args.cuda)
 dtype = torch.float32
 print(args)
 
@@ -59,11 +59,9 @@ dataloaders, charge_scale = dataset.retrieve_dataloaders(args.batch_size, args.n
 # compute mean and mean absolute deviation
 meann, mad = qm9_utils.compute_mean_mad(dataloaders, args.property)
 
-model = EGNN(in_node_nf=15, in_edge_nf=0, hidden_nf=args.nf, device=device, n_layers=args.n_layers, coords_weight=1.0,
+model = EGNN(in_node_nf=15, in_edge_nf=0, hidden_nf=args.nf, device=args.cuda, n_layers=args.n_layers, coords_weight=1.0,
              attention=args.attention, node_attr=args.node_attr)
-
 print(model)
-
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
 loss_l1 = nn.L1Loss()

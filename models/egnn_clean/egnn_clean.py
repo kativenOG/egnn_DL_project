@@ -1,5 +1,74 @@
-from torch import nn
+from torch import nn,optim
 import torch
+import argparse
+import json
+import argparse
+# from qm9 import utils as qm9_utils
+# import utils
+'''
+:param in_node_nf: Number of features for 'h' at the input
+:param hidden_nf: Number of hidden features
+:param out_node_nf: Number of features for 'h' at the output
+:param in_edge_nf: Number of features for the edge features
+:param device: Device (e.g. 'cpu', 'cuda:0',...)
+:param act_fn: Non-linearity
+:param n_layers: Number of layer for the EGNN
+:param residual: Use residual connections, we recommend not changing this one
+:param attention: Whether using attention or not
+:param normalize: Normalizes the coordinates messages such that:
+    instead of: x^{l+1}_i = x^{l}_i + Σ(x_i - x_j)phi_x(m_ij)
+    we get:     x^{l+1}_i = x^{l}_i + Σ(x_i - x_j)phi_x(m_ij)/||x_i - x_j||
+    We noticed it may help in the stability or generalization in some future works.
+    We didn't use it in our paper.
+:param tanh: Sets a tanh activation function at the output of phi_x(m_ij). I.e. it bounds the output of
+    phi_x(m_ij) which definitely improves in stability but it may decrease in accuracy.
+    We didn't use it in our paper.
+'''
+
+# PARSER ARGUMENTS
+parser = argparse.ArgumentParser(description='DL course Project')
+parser.add_argument('--exp_name', type=str, default='exp_1', metavar='N',
+                    help='experiment_name')
+parser.add_argument('--batch_size', type=int, default=96, metavar='N',
+                    help='input batch size for training (default: 128)')
+parser.add_argument('--epochs', type=int, default=1000, metavar='N',
+                    help='number of epochs to train (default: 10)')
+parser.add_argument('--no-cuda', action='store_true', default=False,
+                    help='enables CUDA training')
+parser.add_argument('--log_interval', type=int, default=20, metavar='N',
+                    help='how many batches to wait before logging training status')
+parser.add_argument('--test_interval', type=int, default=1, metavar='N',
+                    help='how many epochs to wait before logging test')
+parser.add_argument('--outf', type=str, default='AIDS/logs', metavar='N',
+                    help='folder to output values') 
+parser.add_argument('--lr', type=float, default=1e-3, metavar='N',
+                    help='Learning Rate 1')
+parser.add_argument('--nf', type=int, default=128, metavar='N',
+                    help='Number of hidden features')
+parser.add_argument('--n_layers', type=int, default=7, metavar='N',
+                    help='Number of Layers')
+parser.add_argument('--attention', type=int, default=1, metavar='N',
+                    help='attention in the ae model')
+parser.add_argument('--property', type=str, default='1', metavar='N',
+                    help='label to predict: AIDS | NOT_AIDS')
+parser.add_argument('--num_workers', type=int, default=0, metavar='N',
+                    help='number of workers for the dataloader')
+parser.add_argument('--dataset_paper', type=str, default="cormorant", metavar='N',
+                    help='cormorant, lie_conv')
+parser.add_argument('--node_attr', type=int, default=0, metavar='N',
+                    help='node_attr or not')
+parser.add_argument('--weight_decay', type=float, default=1e-16, metavar='N',
+                    help='weight decay')
+parser.add_argument('--normalize', type=float, default=True, metavar='N',
+                    help='Normalize coordinates Messages')
+parser.add_argument('--hidden_nf', type=float, default=32, metavar='N',
+                    help='Normalize coordinates Messages')
+args = parser.parse_args()
+args.cuda = not args.no_cuda and torch.cuda.is_available()
+device = torch.device("cuda" if args.cuda else "cpu")
+dtype = torch.float32
+print(args)
+
 
 
 class E_GCL(nn.Module):
@@ -164,48 +233,124 @@ def unsorted_segment_mean(data, segment_ids, num_segments):
     return result / count.clamp(min=1)
 
 
-def get_edges(n_nodes):
-    rows, cols = [], []
-    for i in range(n_nodes):
-        for j in range(n_nodes):
-            if i != j:
-                rows.append(i)
-                cols.append(j)
+# def get_edges(n_nodes):
+#     rows, cols = [], []
+#     for i in range(n_nodes):
+#         for j in range(n_nodes):
+#             if i != j:
+#                 rows.append(i)
+#                 cols.append(j)
 
-    edges = [rows, cols]
-    return edges
+#     edges = [rows, cols]
+#     return edges
 
 
-def get_edges_batch(n_nodes, batch_size):
-    edges = get_edges(n_nodes)
-    edge_attr = torch.ones(len(edges[0]) * batch_size, 1)
-    edges = [torch.LongTensor(edges[0]), torch.LongTensor(edges[1])]
-    if batch_size == 1:
-        return edges, edge_attr
-    elif batch_size > 1:
-        rows, cols = [], []
-        for i in range(batch_size):
-            rows.append(edges[0] + n_nodes * i)
-            cols.append(edges[1] + n_nodes * i)
-        edges = [torch.cat(rows), torch.cat(cols)]
-    return edges, edge_attr
+# def get_edges_batch(n_nodes, batch_size):
+#     edges = get_edges(n_nodes)
+#     edge_attr = torch.ones(len(edges[0]) * batch_size, 1)
+#     edges = [torch.LongTensor(edges[0]), torch.LongTensor(edges[1])]
+#     if batch_size == 1:
+#         return edges, edge_attr
+#     elif batch_size > 1:
+#         rows, cols = [], []
+#         for i in range(batch_size):
+#             rows.append(edges[0] + n_nodes * i)
+#             cols.append(edges[1] + n_nodes * i)
+#         edges = [torch.cat(rows), torch.cat(cols)]
+#     return edges, edge_attr
+
+def main():
+    # model= EGNN(in_node_nf=n_feat, hidden_nf=32, out_node_nf=1, in_edge_nf=1)
+    model = EGNN(out_node_nf=args.out_nf,in_node_nf=15, in_edge_nf=0, hidden_nf=args.nf, device=device, n_layers=args.n_layers,attention=args.attention,normalize=args.normalize)
+
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
+    loss_l1 = nn.L1Loss()
+
+    def train(epoch, loader, partition='train'):
+        lr_scheduler.step()
+        res = {'loss': 0, 'counter': 0, 'loss_arr':[]}
+        for i, data in enumerate(loader):
+            if partition == 'train':
+                model.train()
+                optimizer.zero_grad()
+
+            else:
+                model.eval()
+
+            batch_size, n_nodes, _ = data['positions'].size()
+            atom_positions = data['positions'].view(batch_size * n_nodes, -1).to(device, dtype)
+            atom_mask = data['atom_mask'].view(batch_size * n_nodes, -1).to(device, dtype)
+            edge_mask = data['edge_mask'].to(device, dtype)
+            one_hot = data['one_hot'].to(device, dtype)
+            charges = data['charges'].to(device, dtype)
+            nodes = qm9_utils.preprocess_input(one_hot, charges, args.charge_power, charge_scale, device)
+
+            nodes = nodes.view(batch_size * n_nodes, -1)
+            # nodes = torch.cat([one_hot, charges], dim=1)
+            edges = qm9_utils.get_adj_matrix(n_nodes, batch_size, device)
+            label = data[args.property].to(device, dtype)
+
+            pred = model(h0=nodes, x=atom_positions, edges=edges, edge_attr=None, node_mask=atom_mask, edge_mask=edge_mask,
+                         n_nodes=n_nodes)
+
+            if partition == 'train':
+                loss = loss_l1(pred, (label - meann) / mad)
+                loss.backward()
+                optimizer.step()
+            else:
+                loss = loss_l1(mad * pred + meann, label)
+
+            res['loss'] += loss.item() * batch_size
+            res['counter'] += batch_size
+            res['loss_arr'].append(loss.item())
+
+            prefix = ""
+            if partition != 'train':
+                prefix = ">> %s \t" % partition
+
+            if i % args.log_interval == 0:
+                print(prefix + "Epoch %d \t Iteration %d \t loss %.4f" % (epoch, i, sum(res['loss_arr'][-10:])/len(res['loss_arr'][-10:])))
+        return res['loss'] / res['counter']
+
+
+    for epoch in range(0, args.epochs):
+        train(epoch, dataloaders['train'], partition='train')
+        if epoch % args.test_interval == 0:
+            val_loss = train(epoch, dataloaders['valid'], partition='valid')
+            test_loss = train(epoch, dataloaders['test'], partition='test')
+            res['epochs'].append(epoch)
+            res['losess'].append(test_loss)
+
+            if val_loss < res['best_val']:
+                res['best_val'] = val_loss
+                res['best_test'] = test_loss
+                res['best_epoch'] = epoch
+            print("Val loss: %.4f \t test loss: %.4f \t epoch %d" % (val_loss, test_loss, epoch))
+            print("Best: val loss: %.4f \t test loss: %.4f \t epoch %d" % (res['best_val'], res['best_test'], res['best_epoch']))
+
+
+        json_object = json.dumps(res, indent=4)
+        with open(args.outf + "/" + args.exp_name + "/losess.json", "w") as outfile:
+            outfile.write(json_object)
 
 
 if __name__ == "__main__":
+    main()
     # Dummy parameters
-    batch_size = 8
-    n_nodes = 4
-    n_feat = 1
-    x_dim = 3
+    # batch_size = 8
+    # n_nodes = 4
+    # n_feat = 1
+    # x_dim = 3
 
-    # Dummy variables h, x and fully connected edges
-    h = torch.ones(batch_size *  n_nodes, n_feat)
-    x = torch.ones(batch_size * n_nodes, x_dim)
-    edges, edge_attr = get_edges_batch(n_nodes, batch_size)
+    # # Dummy variables h, x and fully connected edges
+    # h = torch.ones(batch_size *  n_nodes, n_feat)
+    # x = torch.ones(batch_size * n_nodes, x_dim)
+    # edges, edge_attr = get_edges_batch(n_nodes, batch_size)
 
-    # Initialize EGNN
-    egnn = EGNN(in_node_nf=n_feat, hidden_nf=32, out_node_nf=1, in_edge_nf=1)
+    # # Initialize EGNN
+    # egnn = EGNN(in_node_nf=n_feat, hidden_nf=32, out_node_nf=1, in_edge_nf=1)
 
-    # Run EGNN
-    h, x = egnn(h, x, edges, edge_attr)
+    # # Run EGNN
+    # h, x = egnn(h, x, edges, edge_attr)
 
