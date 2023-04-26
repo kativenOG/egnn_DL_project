@@ -1,0 +1,8 @@
+M = number of Nodes 
+N = number of Edges  
+
+- AIDS_A.TXT = Adjacency Matrix, but is N*2 where N is the number of labels  and not M*M where M is the number of nodes (easier to compile)
+- AIDS_EDGE_LABELS = Labeling for each edge, the matrix is N*1 and the labels can only be part of the set {1,2,3}
+- AIDS_GRAPH_LABELS  = ???
+- AIDS_GRAPH_INDICATOR = ???
+- AIDS_NODE_ATTRIBUTES = x matrix, all the values for each node, 4 attributes for each node

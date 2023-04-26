@@ -63,7 +63,7 @@ model = EGNN(in_node_nf=15, in_edge_nf=0, hidden_nf=args.nf, device=args.cuda, n
              attention=args.attention, node_attr=args.node_attr)
 print(model)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
+lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs) # Decaying learning rate for each batch 
 loss_l1 = nn.L1Loss()
 
 
