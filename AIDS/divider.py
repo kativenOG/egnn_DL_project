@@ -1,4 +1,7 @@
 import torch 
+from torch_geometric.loader import DataLoader
+from torch_geometric.data import Data
+import numpy as np 
 import pandas as pd 
 from tqdm import tqdm 
 import math 
@@ -30,16 +33,25 @@ class storage:
         self.node_attributes_and_labels= [] # Node Attributes with respectives labels 
         self.adjecency_and_labels = [] # Adjecency matrix and edges label
         self.edge_set = set() # Nodes counter 
+
+    def print(self):
+        print(f"#####Storage Print#####")
+        print(f"Normalized Edges with Labels: {self.adjecency_and_labels}")
+        print(f"Node Attributes with labels: {self.node_attributes_and_labels}")
+        print()
     
     def add_node(self,n):
         self.edge_set.add(n)
 
     def self_add_node_attr(self,attr_array):
+        cols = list(attr_array.columns)
         edge_list = list(self.edge_set)
         edge_list.sort() # this way all attr arrays are already sorted 
         for node in edge_list:
-            self.node_attributes_and_labels.append(attr_array.iloc[node]) #-1])
-        # print(f"Graph {self.n} Done")
+            pos = node- 1
+            df_line = attr_array.iloc[pos]
+            val = [df_line[index] for index in cols] 
+            self.node_attributes_and_labels.append(val)
         
     def add_edge(self,n1,n2,label):
         if (n1 in self.edge_set) or (n2 in self.edge_set):
@@ -62,11 +74,29 @@ class storage:
                 self.adjecency_and_labels[i][0] = node_dict[str(self.adjecency_and_labels[i][0])]
                 self.adjecency_and_labels[i][1] =  node_dict[str(self.adjecency_and_labels[i][1])]
             except:
+                print("####ERROR####")
                 print(f"Node list: {edge_list}\n")
                 print(f"Edges: {self.adjecency_and_labels}\n")
                 print(f"PAIR: {self.adjecency_and_labels[i][0]},{self.adjecency_and_labels[i][1]}")
                 exit()
-    
+
+    def generate_data(self):
+
+        num_nodes = len(list(self.edge_set))
+        node_appo = np.array(self.node_attributes_and_labels)
+        edge_appo = np.array(self.adjecency_and_labels)
+
+        x = torch.Tensor(node_appo[:,0:4])
+        y =  torch.Tensor(node_appo[:,4]) # node labels 
+        edge_index  = torch.Tensor(edge_appo[:,0:2])
+        edge_attr = torch.Tensor(edge_appo[:,2]) # edge labels 
+
+        # Data from pytorch Geometric
+        data = Data(x=x,edge_attr=edge_attr,edge_index=edge_index,y=y)
+        data.num_nodes = num_nodes
+        data.is_directed = False  # BOHHHH VEDIAMO 
+
+        return data  
 
 class Dataset: 
 
@@ -75,61 +105,82 @@ class Dataset:
         self.data_loader= None  
 
     def generateData(self):
-        action_dict = {"Nodes": False,"Edges":False}
+        action_dict = {"Nodes": False,"Edges":False} # STATS DICT 
+
         # EDGES dataframes:
-        e_adj_label= pd.read_csv("AIDS_A.txt") # Matrice di Adiacenza 
-        e_attr= pd.read_csv("AIDS_edge_labels.txt")
-        e_adj_label["label"] =  e_attr["0"]
+        e_adj_label= pd.read_csv("AIDS_A.txt",header=None) # Matrice di Adiacenza 
+        e_attr= pd.read_csv("AIDS_edge_labels.txt",header=None)
+        e_adj_label["label"] =  e_attr[0]
         
         # NODES dataframes:
-        n_attr_label = pd.read_csv("AIDS_node_attributes.txt")
-        n_label= pd.read_csv("AIDS_node_labels.txt")
-        n_attr_label["label"] =  n_label["0"]
+        n_attr_label = pd.read_csv("AIDS_node_attributes.txt",header=None)
+        n_label= pd.read_csv("AIDS_node_labels.txt",header=None)
+        n_attr_label["label"] =  n_label[0]
         
         
         # List for Storing all the 2000 graphs 
         warehouse = [ storage(i) for i in range(2000)] 
         
         # Graph Indicator files that tells us every Node Graph 
-        graph_indicator = pd.read_csv("AIDS_graph_indicator.txt")
+        graph_indicator = pd.read_csv("AIDS_graph_indicator.txt",header=None)
         # counter = 0 
 
         # Adding all graph nodes to storage set 
-        warehouse[0].add_node(1)
+        print("Adding Nodes based on graph_indicator! ")
         for index,graph_n in graph_indicator.iterrows():
-            val = int(graph_n["1"])-1
-            warehouse[val].add_node(int(index+2))
-        print(warehouse[-1].edge_set)
+            val = int(graph_n[0])-1
+            warehouse[val].add_node(int(index+1))
+        print("Done!")
         
         # Adding all node attributes and node labels to every graph
+        print("Adding node attributes and labels to their graphs ")
         for data in tqdm(warehouse):
             data.self_add_node_attr(n_attr_label)
+        print("Done!")
     
-        # Check stats
+        # STATS: 
+        print()
         action_dict["Nodes"]= True 
         graph_stats(warehouse,action_dict)
+        print()
     
         # Add edges to create a adjecency matrix for each cell 
+        print("Create the adjacency matrix for each graph")
         pivot = math.ceil(len(e_adj_label)/2)
         inverse_warehouse  = warehouse[::-1]
         for index,edge in tqdm(e_adj_label.iterrows()):
             iterable =  warehouse if index<pivot else inverse_warehouse
-            a,b,label = edge["1"],edge[" 2"],edge["label"]
+            a,b,label = edge[0],edge[1],edge["label"]
             for instance in iterable:
                 if instance.add_edge(a,b,label): break
+        print("Done!")
+
         # STATS:
+        print()
         action_dict["Edges"],action_dict["Nodes"] = True, False
         graph_stats(warehouse,action_dict)
+        print()
     
         # Normalize node numbers 
         print("Normalizing Nodes! ")
         for instance in tqdm(warehouse):
             instance.normalize_storage() 
         print("Done!")
-        
-        return None 
+
+        # warehouse[0].print()
+        # exit()
+
+        print("Generate Dataloader! ")
+        dataset = []
+        for instance in tqdm(warehouse):
+            dataset.append(instance.generate_data())
+        data_loader = DataLoader(dataset=dataset,batch_size=20,shuffle=True)
+        print("Done!")
+
+        return data_loader 
 
 
 if __name__ == "__main__":
     dataset = Dataset()
     data_loader = dataset.generateData()
+    print(data_loader)
