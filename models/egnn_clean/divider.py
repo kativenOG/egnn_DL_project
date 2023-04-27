@@ -16,12 +16,14 @@ def graph_stats(warehouse,action_dict):
        avg_nodes+= len(data.edge_set) if action_dict["Nodes"] == True else 0 
        avg_labels+= len(data.adjecency_and_labels) if action_dict["Edges"] == True else 0 
     # PRINTS:
+    print()
     print("STATS:")
     if action_dict["Nodes"] == True:
         print(f"Avg number of Nodes: {avg_nodes/2000}")
     if action_dict["Edges"] == True: 
         print(f"Avg number of Labels (ALL): {avg_labels/2000}")
         print(f"Avg number of Labels (Counting each pair only once) : {avg_labels/4000}")
+    print()
 
 
 class storage: 
@@ -80,21 +82,22 @@ class storage:
                 print(f"PAIR: {self.adjecency_and_labels[i][0]},{self.adjecency_and_labels[i][1]}")
                 exit()
 
-    def generate_data(self):
+    def extract_data(self):
 
         num_nodes = len(list(self.edge_set))
         node_appo = np.array(self.node_attributes_and_labels)
         edge_appo = np.array(self.adjecency_and_labels)
 
-        x = torch.Tensor(node_appo[:,0:4])
-        y =  torch.Tensor(node_appo[:,4]) # node labels 
-        edge_index  = torch.Tensor(edge_appo[:,0:2])
-        edge_attr = torch.Tensor(edge_appo[:,2]) # edge labels 
+        x = torch.tensor(node_appo[:,0:4],requires_grad=True)
+        y =  torch.Tensor(node_appo[:,4].T).view(len(node_appo),1) # node labels 
+        ### METTI APPOSTO IL RESHAPE 
+        edge_index  = torch.reshape(torch.LongTensor(edge_appo[:,0:2]),(2,len(edge_appo)))#torch.LongTensor(edge_appo[:,0:2]).view(2,len(edge_appo))
+        edge_attr = torch.Tensor(edge_appo[:,2].T).view(len(edge_appo),1) # edge labels 
+        
 
-        # Data from pytorch Geometric
         data = Data(x=x,edge_attr=edge_attr,edge_index=edge_index,y=y)
         data.num_nodes = num_nodes
-        data.is_directed = False  # BOHHHH VEDIAMO 
+        # data.is_directed = False  # BOHHHH VEDIAMO 
 
         return data  
 
@@ -108,13 +111,13 @@ class Dataset:
         action_dict = {"Nodes": False,"Edges":False} # STATS DICT 
 
         # EDGES dataframes:
-        e_adj_label= pd.read_csv("AIDS_A.txt",header=None) # Matrice di Adiacenza 
-        e_attr= pd.read_csv("AIDS_edge_labels.txt",header=None)
+        e_adj_label= pd.read_csv("../../AIDS/AIDS_A.txt",header=None) # Matrice di Adiacenza 
+        e_attr= pd.read_csv("../../AIDS/AIDS_edge_labels.txt",header=None)
         e_adj_label["label"] =  e_attr[0]
         
         # NODES dataframes:
-        n_attr_label = pd.read_csv("AIDS_node_attributes.txt",header=None)
-        n_label= pd.read_csv("AIDS_node_labels.txt",header=None)
+        n_attr_label = pd.read_csv("../../AIDS/AIDS_node_attributes.txt",header=None)
+        n_label= pd.read_csv("../../AIDS/AIDS_node_labels.txt",header=None)
         n_attr_label["label"] =  n_label[0]
         
         
@@ -122,7 +125,7 @@ class Dataset:
         warehouse = [ storage(i) for i in range(2000)] 
         
         # Graph Indicator files that tells us every Node Graph 
-        graph_indicator = pd.read_csv("AIDS_graph_indicator.txt",header=None)
+        graph_indicator = pd.read_csv("../../AIDS/AIDS_graph_indicator.txt",header=None)
         # counter = 0 
 
         # Adding all graph nodes to storage set 
@@ -139,27 +142,23 @@ class Dataset:
         print("Done!")
     
         # STATS: 
-        print()
         action_dict["Nodes"]= True 
         graph_stats(warehouse,action_dict)
-        print()
     
         # Add edges to create a adjecency matrix for each cell 
         print("Create the adjacency matrix for each graph")
         pivot = math.ceil(len(e_adj_label)/2)
         inverse_warehouse  = warehouse[::-1]
         for index,edge in tqdm(e_adj_label.iterrows()):
-            iterable =  warehouse if index<pivot else inverse_warehouse
+            iterable =  warehouse if (index<pivot) else inverse_warehouse
             a,b,label = edge[0],edge[1],edge["label"]
             for instance in iterable:
                 if instance.add_edge(a,b,label): break
         print("Done!")
 
         # STATS:
-        print()
         action_dict["Edges"],action_dict["Nodes"] = True, False
         graph_stats(warehouse,action_dict)
-        print()
     
         # Normalize node numbers 
         print("Normalizing Nodes! ")
@@ -167,20 +166,30 @@ class Dataset:
             instance.normalize_storage() 
         print("Done!")
 
-        # warehouse[0].print()
-        # exit()
 
         print("Generate Dataloader! ")
-        dataset = []
-        for instance in tqdm(warehouse):
-            dataset.append(instance.generate_data())
-        data_loader = DataLoader(dataset=dataset,batch_size=20,shuffle=True)
+        train_dataset,test_dataset = [],[]
+        pivot = math.ceil(len(warehouse)*0.8)
+        for i,instance in enumerate(tqdm(warehouse)):
+            if i < pivot:
+                train_dataset.append(instance.extract_data())
+            else:
+                test_dataset.append(instance.extract_data())
+        train_dl= DataLoader(dataset=train_dataset,batch_size=1,shuffle=True)
+        test_dl= DataLoader(dataset=test_dataset,batch_size=1,shuffle=True)
         print("Done!")
 
-        return data_loader 
+        return train_dl,test_dl 
 
 
 if __name__ == "__main__":
     dataset = Dataset()
-    data_loader = dataset.generateData()
-    print(data_loader)
+    train_dl, test_dl = dataset.generateData()
+    print("Iterating through the DataLoader!")
+    for data in train_dl:
+        print("x : ",data.x,data.x.shape)
+        print("y : ",data.y,data.y.shape)
+        print("Edge Index: ",data.edge_index,data.edge_index.shape)
+        print("Edge Attr: ",data.edge_attr,data.edge_attr.shape)
+        break
+    exit()
