@@ -68,8 +68,8 @@ class storage:
         # Generating the dict for normalizing the edges 
         node_dict,counter= {},0
         for node in edge_list:
-            counter+=1
             node_dict[str(node)] = counter
+            counter+=1
         # Now normalize the edges using the node_dict 
         for i in range(len(self.adjecency_and_labels)):
             try:
@@ -88,11 +88,14 @@ class storage:
         node_appo = np.array(self.node_attributes_and_labels)
         edge_appo = np.array(self.adjecency_and_labels)
 
-        x = torch.tensor(node_appo[:,0:4],requires_grad=True)
-        y =  torch.Tensor(node_appo[:,4].T).view(len(node_appo),1) # node labels 
+        x = torch.tensor(node_appo[:,0:4],requires_grad=True,dtype=torch.float32)
+        y =  torch.FloatTensor(node_appo[:,4].T).view(len(node_appo),1) # node labels 
+
         ### METTI APPOSTO IL RESHAPE 
-        edge_index  = torch.reshape(torch.LongTensor(edge_appo[:,0:2]),(2,len(edge_appo)))#torch.LongTensor(edge_appo[:,0:2]).view(2,len(edge_appo))
-        edge_attr = torch.Tensor(edge_appo[:,2].T).view(len(edge_appo),1) # edge labels 
+        adjacency = torch.LongTensor(edge_appo[:,0:2])
+        edge_index  = torch.reshape(adjacency,(2,len(edge_appo)))
+        edge_attr = torch.FloatTensor(edge_appo[:,2].T).view(len(edge_appo),1) 
+        # print(edge_attr,edge_attr.shape,edge_attr.dtype)
         
 
         data = Data(x=x,edge_attr=edge_attr,edge_index=edge_index,y=y)

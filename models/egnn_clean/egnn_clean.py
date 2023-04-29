@@ -91,6 +91,7 @@ class E_GCL(nn.Module):
         return coord
 
     def coord2radial(self, edge_index, coord):
+        # print(f"EDGE INDEX: {edge_index}")
         row, col = edge_index
         coord_diff = coord[row] - coord[col]
         radial = torch.sum(coord_diff**2, 1).unsqueeze(1)
