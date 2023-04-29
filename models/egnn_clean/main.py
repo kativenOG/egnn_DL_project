@@ -64,8 +64,8 @@ def main():
     for epoch in range(args.epochs):
         # train_preds,train_gts,test_preds,test_gts  = np.array([]),np.array([]),np.array([]),np.array([])
         train_loss, test_loss = 0,0
-        train_preds,train_gts = np.array(),np.array()
-        test_preds,test_gts = np.array(),np.array()
+        train_preds,train_gts = [],[]
+        test_preds,test_gts = [],[]
         model.train()
         for data in iter(train_dl):
 
@@ -84,26 +84,35 @@ def main():
             train_loss.backward()
             optimizer.step()
             # save results for statistics
-            train_preds = np.concatenate((train_preds, h.flatten().numpy()))
+            train_preds = np.concatenate((train_preds, h.flatten().detach().numpy()))
             train_gts = np.concatenate((train_gts, data.y.flatten().numpy()))
 
         model.eval()
         for data in test_dl:
 
-            h = torch.ones([0]*len(data.x))
-            h, x = model(h, data.x, data.edge_index, data.edge_attr)
+            h = torch.ones(len(data.x),1)
+            edge_index = []
+            edge_index.append(data.edge_index[0])
+            edge_index.append(data.edge_index[1])
+            h, x = model(h, data.x, edge_index, data.edge_attr)
             # Compute loss value
             test_loss = loss_l1(h, data.y)
             # Save results for statistics
-            test_preds = np.concatenate((test_preds, h.flatten().numpy()))
-            test_gts = np.concatenate((test_gts, y.flatten().numpy()))
+            test_preds = np.concatenate((test_preds, h.flatten().detach().numpy()))
+            test_gts = np.concatenate((test_gts, data.y.flatten().numpy()))
 
         # Compute Stats 
         if epoch % 1 == 0:
-            train_accs.append(accuracy_score(train_gts, train_preds))
-            test_accs.append(accuracy_score(test_gts, test_preds))
+            # train_accs.append(accuracy_score(train_gts, train_preds))
+            # test_accs.append(accuracy_score(test_gts, test_preds))
             train_losses.append(train_loss.item())
             test_losses.append(test_loss.item())
+            train_appo,test_appo= sum(train_losses)/len(train_losses),sum(test_losses)/len(test_losses)
+
+            print(f"Epoch: {epoch}")
+            print(f"Train:\n  Avg_loss:{train_appo}\n") #Accuracy:{train_accs}") 
+            print(f"Test:\n  Avg_loss:{test_appo}\n ") #Accuracy:{test_accs}") 
+            print()
 
 
 
