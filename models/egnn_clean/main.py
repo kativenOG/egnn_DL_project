@@ -49,13 +49,22 @@ dtype = torch.float32
 
 def stats(part,preds,gts,losses):
     # Accuracy 
-    preds = list(map(round,preds))
-    acc  = accuracy_score(y_pred=preds,y_true=gts) 
+    # preds = list(map(round,preds))
+    # new_gts = list(map(np.argmax,gts))
+    # new_preds = list(map(np.argmax,preds))
+    # acc  = accuracy_score(y_pred=new_preds,y_true=new_gts) 
     loss_avg = sum(losses)/len(losses)  # Average Loss 
-    print(f"{part}:  Avg_loss: {loss_avg:.3f} (in this epoch) Accuracy:{acc:.3f}") 
-    print()
+    print(f"{part}:  Avg_loss: {loss_avg:.3f}") #Accuracy:{acc:.3f}") 
 
 
+def one_hot(y):
+    new_y = torch.zeros(len(y),38)
+    # print(new_y)
+    # print(len(new_y[0]))
+    # print(new_y.shape)
+    for i,val in enumerate(y):
+        new_y[i,int(val)] = 1 
+    return new_y
 
 def visualize(h, color):
     z = TSNE(n_components=2,perplexity=10).fit_transform(h.detach().cpu().numpy())
@@ -72,77 +81,81 @@ def main():
     print("Device: {}".format(device))
 
     # Model and Stuff
-    model = EGNN(out_node_nf=1,in_node_nf=1, in_edge_nf=1, hidden_nf=32, device=device, n_layers=3,attention=False,normalize=False)
+    # model = EGNN(out_node_nf=1,in_node_nf=1, in_edge_nf=1, hidden_nf=32, device=device, n_layers=3,attention=False,normalize=False) # For L1loss
+    model = EGNN(out_node_nf=38,in_node_nf=1, in_edge_nf=1, hidden_nf=32, device=device, n_layers=3,attention=False,normalize=False) # for Cross Entropy Loss
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    # loss = nn.CrossEntropyLoss() # Cant use it because the net doesnt return a probability distribution but only a single value related to the class 
-    loss = nn.L1Loss()
+    loss = nn.CrossEntropyLoss() # Better
+    # loss = nn.L0Loss()
     
     # Generate Training and Testing datasets
     dataset = Dataset()
     train_dl, test_dl = dataset.generateData()
 
+    # Softmax Example
+    soft_max = nn.Softmax(dim=1)
+    # input = torch.randn(2, 3)
+    # output = soft_max(input)
+
     for epoch in range(args.epochs):
-        # train_preds,train_gts,test_preds,test_gts  = np.array([]),np.array([]),np.array([]),np.array([])
-        # train_loss, test_loss = 0,0
 
         train_losses,test_losses = [],[]
         train_preds,train_gts = [],[]
         test_preds,test_gts = [],[]
-
+        
         model.train()
         for data in iter(train_dl):
-            # Transforming tensors from data to numpy ndarrays beacuse the example did so  
+            # Transforming tensors of edge_index (adjacency)
             edge_index = []
             edge_index.append(data.edge_index[0])
             edge_index.append(data.edge_index[1])
             h = torch.ones(len(data.x),1)#.view(len(data.x),1)
             h, x = model(h, data.x, edge_index, data.edge_attr)
-
-            # Compute Loss Value
-            train_loss = loss(h,data.y)
             # visualize(h,data.y)
 
-            # Backward Pass - update the Weights
+            new_y = one_hot(data.y)
+            h_softmaxed = soft_max(h)
+            print(model)
+            print()
+            print(h_softmaxed)
+            exit()
+            train_loss = loss(h_softmaxed,new_y)
+
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
-            train_losses.append(train_loss.item())
 
-            # print(train_loss.item())
-            
             # Save Results for Statistics
-            train_preds = np.concatenate((train_preds, h.flatten().detach().numpy()))
-            train_gts = np.concatenate((train_gts, data.y.flatten().numpy()))
+            if epoch % 10 == 0:
+                train_losses.append(train_loss.item())
+                train_preds = np.concatenate((train_preds, h_softmaxed.flatten().detach().numpy()))
+                train_gts = np.concatenate((train_gts, new_y.flatten().numpy()))
 
-        model.eval()
-        for data in test_dl:
-
-            h = torch.ones(len(data.x),1)
-            edge_index = []
-            edge_index.append(data.edge_index[0])
-            edge_index.append(data.edge_index[1])
-            h, x = model(h, data.x, edge_index, data.edge_attr)
-            # Compute loss value
-            test_loss = loss(h, data.y)
-            test_losses.append(test_loss.item())
-            # Save results for statistics
-            test_preds = np.concatenate((test_preds, h.flatten().detach().numpy()))
-            test_gts = np.concatenate((test_gts, data.y.flatten().numpy()))
-
-        # Compute Stats 
         if epoch % 10 == 0:
+            model.eval()
+            for data in test_dl:
+
+                h = torch.ones(len(data.x),1)
+                edge_index = []
+                edge_index.append(data.edge_index[0])
+                edge_index.append(data.edge_index[1])
+                h, x = model(h, data.x, edge_index, data.edge_attr)
+
+                new_y = one_hot(data.y)
+                h_softmaxed = soft_max(h)
+                test_loss = loss(h_softmaxed,new_y)
+
+                # Save results for statistics
+                if epoch % 10 == 0:
+                    test_losses.append(test_loss.item())
+                    test_preds = np.concatenate((test_preds, h_softmaxed.flatten().detach().numpy()))
+                    test_gts = np.concatenate((test_gts, new_y.flatten().numpy()))
+
+            # Compute Stats 
             print(f"Epoch: {epoch}")
             stats("Train",train_preds,train_gts,train_losses)
             stats("Test",test_preds,test_gts,test_losses)
-            # # Accuracy 
-            # train_preds,test_preds = list(map(round,train_preds)),list(map(round,test_preds))
-            # train_acc,test_acc  = accuracy_score(y_pred=train_preds,y_true=train_gts), accuracy_score(y_pred=test_preds,y_true=test_gts)   
-            # # Average Loss 
-            # train_appo,test_appo= sum(train_losses)/len(train_losses),sum(test_losses)/len(test_losses)
-            # print(f"Train:  Avg_loss: {train_appo:.3f} (in this epoch) Accuracy:{train_acc:.3f}") 
-            # print(f"Test:  Avg_loss: {test_appo:.3f} (in this epoch) Accuracy:{test_acc:.3f}") 
-            # print()
-            
+            print()
+                        
     print("Saving the Model")
     torch.save(model.state_dict,"./state_dict/egnn.pt")
 
