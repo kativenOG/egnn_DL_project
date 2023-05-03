@@ -178,8 +178,8 @@ class Dataset:
                 train_dataset.append(instance.extract_data())
             else:
                 test_dataset.append(instance.extract_data())
-        train_dl= DataLoader(dataset=train_dataset,batch_size=1,shuffle=True)
-        test_dl= DataLoader(dataset=test_dataset,batch_size=1,shuffle=True)
+        train_dl= DataLoader(dataset=train_dataset,batch_size=20,shuffle=True)
+        test_dl= DataLoader(dataset=test_dataset,batch_size=20,shuffle=True)
         print("Done!")
 
         return train_dl,test_dl 

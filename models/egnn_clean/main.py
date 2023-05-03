@@ -1,12 +1,13 @@
-from pyarrow import Tensor
+from tqdm import tqdm 
 import torch
 from torch import nn,optim
 from egnn_clean import EGNN 
 from divider import Dataset 
-import numpy as np
+import numpy as np 
 import argparse
 from sklearn.metrics import accuracy_score
-# import datasetLoader
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
 
 
 # PARSER ARGUMENTS
@@ -17,7 +18,7 @@ parser.add_argument('--batch_size', type=int, default=20, metavar='N',
                     help='input batch size for training (default: 20)')
 parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--no-cuda', action='store_true', default=False,
+parser.add_argument('--no_cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--log_interval', type=int, default=20, metavar='N',
                     help='how many batches to wait before logging training status')
@@ -46,44 +47,70 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device("cuda" if args.cuda else "cpu")
 dtype = torch.float32
 
+def stats(part,preds,gts,losses):
+    # Accuracy 
+    preds = list(map(round,preds))
+    acc  = accuracy_score(y_pred=preds,y_true=gts) 
+    loss_avg = sum(losses)/len(losses)  # Average Loss 
+    print(f"{part}:  Avg_loss: {loss_avg:.3f} (in this epoch) Accuracy:{acc:.3f}") 
+    print()
+
+
+
+def visualize(h, color):
+    z = TSNE(n_components=2,perplexity=10).fit_transform(h.detach().cpu().numpy())
+
+    plt.figure(figsize=(10,10))
+    plt.xticks([])
+    plt.yticks([])
+
+    plt.scatter(z[:, 0], z[:, 1], s=70, c=color, cmap="Set2")
+    plt.show()
+
 def main():
     print("\n###MAIN###\n")
-    # Model and Stuffn
-    model = EGNN(out_node_nf=1,in_node_nf=1, in_edge_nf=1, hidden_nf=32, device="cpu", n_layers=3,attention=False,normalize=False)
-    # egnn = EGNN(in_node_nf=n_feat, hidden_nf=32, out_node_nf=1, in_edge_nf=1) 
+    print("Device: {}".format(device))
+
+    # Model and Stuff
+    model = EGNN(out_node_nf=1,in_node_nf=1, in_edge_nf=1, hidden_nf=32, device=device, n_layers=3,attention=False,normalize=False)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
-    loss_l1 = nn.L1Loss()
+    # loss = nn.CrossEntropyLoss() # Cant use it because the net doesnt return a probability distribution but only a single value related to the class 
+    loss = nn.L1Loss()
     
     # Generate Training and Testing datasets
     dataset = Dataset()
     train_dl, test_dl = dataset.generateData()
 
-    train_losses,test_losses,train_accs,test_accs = [],[],[],[]
-
     for epoch in range(args.epochs):
         # train_preds,train_gts,test_preds,test_gts  = np.array([]),np.array([]),np.array([]),np.array([])
-        train_loss, test_loss = 0,0
+        # train_loss, test_loss = 0,0
+
+        train_losses,test_losses = [],[]
         train_preds,train_gts = [],[]
         test_preds,test_gts = [],[]
+
         model.train()
         for data in iter(train_dl):
-
             # Transforming tensors from data to numpy ndarrays beacuse the example did so  
             edge_index = []
             edge_index.append(data.edge_index[0])
             edge_index.append(data.edge_index[1])
-
             h = torch.ones(len(data.x),1)#.view(len(data.x),1)
             h, x = model(h, data.x, edge_index, data.edge_attr)
 
             # Compute Loss Value
-            train_loss = loss_l1(h,data.y)
+            train_loss = loss(h,data.y)
+            # visualize(h,data.y)
+
             # Backward Pass - update the Weights
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
-            # save results for statistics
+            train_losses.append(train_loss.item())
+
+            # print(train_loss.item())
+            
+            # Save Results for Statistics
             train_preds = np.concatenate((train_preds, h.flatten().detach().numpy()))
             train_gts = np.concatenate((train_gts, data.y.flatten().numpy()))
 
@@ -96,24 +123,28 @@ def main():
             edge_index.append(data.edge_index[1])
             h, x = model(h, data.x, edge_index, data.edge_attr)
             # Compute loss value
-            test_loss = loss_l1(h, data.y)
+            test_loss = loss(h, data.y)
+            test_losses.append(test_loss.item())
             # Save results for statistics
             test_preds = np.concatenate((test_preds, h.flatten().detach().numpy()))
             test_gts = np.concatenate((test_gts, data.y.flatten().numpy()))
 
         # Compute Stats 
-        if epoch % 1 == 0:
-            # train_accs.append(accuracy_score(train_gts, train_preds))
-            # test_accs.append(accuracy_score(test_gts, test_preds))
-            train_losses.append(train_loss.item())
-            test_losses.append(test_loss.item())
-            train_appo,test_appo= sum(train_losses)/len(train_losses),sum(test_losses)/len(test_losses)
-
+        if epoch % 10 == 0:
             print(f"Epoch: {epoch}")
-            print(f"Train:\n  Avg_loss:{train_appo}\n") #Accuracy:{train_accs}") 
-            print(f"Test:\n  Avg_loss:{test_appo}\n ") #Accuracy:{test_accs}") 
-            print()
-
+            stats("Train",train_preds,train_gts,train_losses)
+            stats("Test",test_preds,test_gts,test_losses)
+            # # Accuracy 
+            # train_preds,test_preds = list(map(round,train_preds)),list(map(round,test_preds))
+            # train_acc,test_acc  = accuracy_score(y_pred=train_preds,y_true=train_gts), accuracy_score(y_pred=test_preds,y_true=test_gts)   
+            # # Average Loss 
+            # train_appo,test_appo= sum(train_losses)/len(train_losses),sum(test_losses)/len(test_losses)
+            # print(f"Train:  Avg_loss: {train_appo:.3f} (in this epoch) Accuracy:{train_acc:.3f}") 
+            # print(f"Test:  Avg_loss: {test_appo:.3f} (in this epoch) Accuracy:{test_acc:.3f}") 
+            # print()
+            
+    print("Saving the Model")
+    torch.save(model.state_dict,"./state_dict/egnn.pt")
 
 
     
