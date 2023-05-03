@@ -83,6 +83,7 @@ def main():
     # Model and Stuff
     # model = EGNN(out_node_nf=1,in_node_nf=1, in_edge_nf=1, hidden_nf=32, device=device, n_layers=3,attention=False,normalize=False) # For L1loss
     model = EGNN(out_node_nf=38,in_node_nf=1, in_edge_nf=1, hidden_nf=32, device=device, n_layers=3,attention=False,normalize=False) # for Cross Entropy Loss
+    print("Model: \n",model)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     loss = nn.CrossEntropyLoss() # Better
     # loss = nn.L0Loss()
@@ -114,10 +115,6 @@ def main():
 
             new_y = one_hot(data.y)
             h_softmaxed = soft_max(h)
-            print(model)
-            print()
-            print(h_softmaxed)
-            exit()
             train_loss = loss(h_softmaxed,new_y)
 
             optimizer.zero_grad()
