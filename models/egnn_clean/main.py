@@ -16,7 +16,7 @@ parser.add_argument('--exp_name', type=str, default='exp_1', metavar='N',
                     help='experiment_name')
 parser.add_argument('--batch_size', type=int, default=20, metavar='N',
                     help='input batch size for training (default: 20)')
-parser.add_argument('--epochs', type=int, default=1000, metavar='N',
+parser.add_argument('--epochs', type=int, default=600, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no_cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -61,7 +61,7 @@ def one_hot(y):
     return new_y
 
 def visualize(h, color):
-    z = TSNE(n_components=2,perplexity=10).fit_transform(h.detach().cpu().numpy())
+    z = TSNE(n_components=2).fit_transform(h)
 
     plt.figure(figsize=(10,10))
     plt.xticks([])
@@ -75,7 +75,7 @@ def main():
     print("Device: {}".format(device))
 
     # Model and Stuff
-    model = EGNN(out_node_nf=38,in_node_nf=1, in_edge_nf=1, hidden_nf=32, device=device, n_layers=3,attention=False,normalize=False) # for Cross Entropy Loss
+    model = EGNN(out_node_nf=38,in_node_nf=4, in_edge_nf=1, hidden_nf=32, device=device, n_layers=3,attention=False,normalize=False) # for Cross Entropy Loss
     print("Model: \n",model)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     loss = nn.CrossEntropyLoss() # Better
@@ -84,8 +84,28 @@ def main():
     dataset = Dataset()
     train_dl, test_dl = dataset.generateData()
 
-    # Softmax Example
-    # soft_max = nn.Softmax(dim=1)
+    # Pre Training Testing 
+    # model.eval()
+    # train_losses,test_losses = [],[]
+    # train_preds,train_gts = [],[]
+    # test_preds,test_gts = [],[]
+
+    # for data in test_dl:
+    #    h = torch.ones(len(data.x),1)
+    #    edge_index = []
+    #    edge_index.append(data.edge_index[0])
+    #    edge_index.append(data.edge_index[1])
+    #    h, x = model(h, data.x, edge_index, data.edge_attr)
+    # 
+    #    test_loss = loss(h,data.y.flatten().long())
+    # 
+    #    # Save results for statistics
+    #    test_losses.append(test_loss.item())
+    #    true_preds = torch.argmax(input=h,dim=1).flatten().detach().numpy()
+    #    test_preds = np.concatenate((test_preds, true_preds))
+    #    test_gts = np.concatenate((test_gts, data.y.flatten().numpy()))
+    #  
+    # stats("Untrained Model",test_preds,test_gts,test_losses)
 
     for epoch in range(args.epochs):
 
@@ -100,8 +120,7 @@ def main():
             edge_index.append(data.edge_index[0])
             edge_index.append(data.edge_index[1])
             h = torch.ones(len(data.x),1)#.view(len(data.x),1)
-            h, x = model(h, data.x, edge_index, data.edge_attr)
-            # visualize(h,data.y)
+            h, x = model(data.x,h, edge_index, data.edge_attr)
 
             train_loss = loss(h,data.y.flatten().long())
 
@@ -111,10 +130,11 @@ def main():
 
             # Save Results for Statistics
             if epoch % 10 == 0:
-                train_losses.append(train_loss.item())
                 true_preds = torch.argmax(input=h,dim=1).flatten().detach().numpy()
+                # visualize(true_preds,data.y)
                 train_preds = np.concatenate((train_preds, true_preds))
                 train_gts = np.concatenate((train_gts, data.y.flatten().numpy()))
+                train_losses.append(train_loss.item())
 
         if epoch % 10 == 0:
             model.eval()
@@ -124,7 +144,7 @@ def main():
                 edge_index = []
                 edge_index.append(data.edge_index[0])
                 edge_index.append(data.edge_index[1])
-                h, x = model(h, data.x, edge_index, data.edge_attr)
+                h, x = model(data.x,h, edge_index, data.edge_attr)
 
                 test_loss = loss(h,data.y.flatten().long())
 
